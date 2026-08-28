@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gteck
+      POSTGRES_PASSWORD: gteck
+      POSTGRES_DB: gteck_technical_test
+    ports:
+      - "5432:5432"
+    volumes:
+      - gteck_test_pgdata:/var/lib/postgresql
+
+volumes:
+  gteck_test_pgdata:

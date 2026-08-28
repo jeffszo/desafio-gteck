@@ -1,0 +1,72 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma-client"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Métricas do Facebook Ads por campanha, uma linha por campanha/dia.
+// As datas são o dia civil LOCAL do anunciante (ver accountTimezone),
+// não UTC, isso difere de GamAdMetric.utcDate.
+model FacebookAdMetric {
+  id                 String   @id @default(cuid())
+  externalCampaignId String
+  campaignName       String
+  siteRef            String
+  localDate          DateTime @db.Date
+  accountTimezone    String
+  accountCurrency    String
+  spend              Decimal  @db.Decimal(12, 2)
+  impressions        Int
+  clicks             Int
+  createdAt          DateTime @default(now())
+
+  @@index([siteRef, localDate])
+}
+
+// Métricas do Google Ad Manager por site, uma linha por site/dia.
+// As datas são sempre UTC. A receita é sempre reportada em USD pela
+// configuração de GAM desta rede.
+model GamAdMetric {
+  id           String   @id @default(cuid())
+  networkCode  String
+  siteCode     String
+  utcDate      DateTime @db.Date
+  currencyCode String
+  adRevenue    Decimal  @db.Decimal(12, 2)
+  impressions  Int
+  adRequests   Int
+  createdAt    DateTime @default(now())
+
+  @@index([siteCode, utcDate])
+}
+
+// Liga o siteRef do Facebook à sua contraparte siteCode do GAM, e carrega
+// os parâmetros financeiros por site necessários pra transformar as
+// métricas brutas num P&L de verdade: quanto da receita bruta de anúncios
+// do GAM a rede de anúncios retém antes de repassar ao site (revSharePct),
+// um tributo retido sobre a receita restante (taxOnRevenuePct), e uma
+// taxa/tributo aplicado em cima do custo de mídia (taxOnMediaCostPct). Nem
+// todo GamAdMetric.siteCode tem uma entrada aqui, ver dados do seed.
+model SiteMapping {
+  id                String  @id @default(cuid())
+  facebookSiteRef   String  @unique
+  gamSiteCode       String  @unique
+  displayName       String
+  revSharePct       Decimal @db.Decimal(5, 4)
+  taxOnRevenuePct   Decimal @db.Decimal(5, 4)
+  taxOnMediaCostPct Decimal @db.Decimal(5, 4)
+}
+
+// Cotação diária USD→BRL. Só é necessária pra converter a receita de
+// anúncios do GAM (em USD) pra moeda local de um site em BRL, sites em
+// USD não precisam dela. Nem toda data do período seedado tem uma linha
+// aqui, ver dados do seed.
+model FxRate {
+  date   DateTime @id @db.Date
+  usdBrl Decimal  @db.Decimal(10, 6)
+}
