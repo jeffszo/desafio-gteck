@@ -16,7 +16,7 @@ Não criei um módulo separado para `SiteMapping` porque ele funciona basicament
 
 Encontrei uma duplicata para `fb-site-nutrihealth-camp-1` em `2026-07-11`. As duas linhas tinham os mesmos valores e fariam o `spend` daquele dia ser somado duas vezes no relatório.
 
-Removi a duplicata do seed e mantive uma migration de segurança para ambientes que já tenham esse registro. Dessa forma, a constraint de unicidade pode ser criada sem quebrar o setup.
+Minha primeira tentativa foi só apagar a duplicata dentro da própria migration, com um `DELETE` antes de criar a constraint. Rodando o setup completo, isso não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro do zero toda vez que roda, então a duplicata voltava e quebrava a constraint que a migration acabara de criar. A correção de verdade precisava estar no `seed.sql`, não só no banco — removi a duplicata do seed (deixando um comentário no lugar) e mantive o `DELETE` na migration só como rede de segurança, pra quem já tiver esse registro carregado de uma execução anterior.
 
 ### Dia sem `FxRate`
 
@@ -78,7 +78,7 @@ Os testes cobrem o cálculo financeiro, ingestão, idempotência, payload vazio,
 
 O `MoneyService` e o `AllExceptionsFilter` possuem testes unitários. Ingestão, relatórios e reconciliação possuem testes de integração utilizando PostgreSQL.
 
-Além dos testes automatizados, validei manualmente as três rotas principais com a API em execução.
+Além dos testes automatizados (`npm test`: 22/22 passando, migrate + seed rodados de verdade), validei manualmente as três rotas principais na mão via Insomnia contra a API rodando: idempotência do webhook (mesmo payload duas vezes, relatório não muda), `GET /reports` do mês inteiro contra os 4 sites, e `GET /reconciliation/gaps` contra os 5 dias reais do FITPRO_MAIN — tudo batendo com número calculado à parte em Python.
 
 Por questão de tempo, não implementei uma rotina automática para alertar sobre gaps. Hoje a inconsistência pode ser consultada pela API. Com mais tempo, eu adicionaria um processo agendado para identificar e notificar esses casos.
 
