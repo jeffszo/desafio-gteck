@@ -16,13 +16,11 @@ Não criei um módulo separado para `SiteMapping` porque ele funciona basicament
 
 Encontrei uma duplicata para `fb-site-nutrihealth-camp-1` em `2026-07-11`. As duas linhas tinham os mesmos valores e fariam o `spend` daquele dia ser somado duas vezes no relatório.
 
-Minha primeira tentativa foi só apagar a duplicata dentro da própria migration, com um `DELETE` antes de criar a constraint. Rodando o setup completo, isso não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro do zero toda vez que roda, então a duplicata voltava e quebrava a constraint que a migration acabara de criar. A correção de verdade precisava estar no `seed.sql`, não só no banco — removi a duplicata do seed (deixando um comentário no lugar) e mantive o `DELETE` na migration só como rede de segurança, pra quem já tiver esse registro carregado de uma execução anterior.
+Minha primeira tentativa foi só apagar a duplicata dentro da própria migration, com um `DELETE` antes de criar a constraint. Rodando o setup completo, isso não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro do zero toda vez que roda, então a duplicata voltava e quebrava a constraint que a migration acabara de criar. A correção de verdade precisava estar no `seed.sql`, não só no banco — removi a duplicata do seed  e mantive o `DELETE` na migration só como rede de segurança, pra quem já tiver esse registro carregado de uma execução anterior.
 
 ### Dia sem `FxRate`
 
-O dia `2026-07-21` não possui cotação. Nesse caso, utilizo a última cotação disponível antes do dia (carry-forward) e registro um aviso no log.
-
-Se não existir nenhuma cotação anterior, prefiro não inventar uma taxa. Nesse cenário, a receita local fica `0` e o caso é registrado no log.
+O dia `2026-07-21` não possui cotação. Nesse caso, utilizo a última cotação disponível antes do dia (carry-forward) e registro um aviso no log. Se não existir nenhuma cotação anterior, prefiro não inventar uma taxa. Nesse cenário, a receita local fica `0` e o caso é registrado no log.
 
 Em um sistema de produção, eu trataria esse caso de forma mais explícita, diferenciando um valor realmente igual a zero de um valor que não pôde ser calculado.
 
@@ -40,13 +38,9 @@ Para o GAM, utilizo `(siteCode, utcDate)`.
 
 Essas chaves possuem `@@unique` no banco e são utilizadas pelo `upsert`, evitando duplicidades quando o mesmo payload é processado novamente.
 
-Escolhi `externalCampaignId` no Facebook porque um mesmo site pode ter mais de uma campanha no mesmo dia. Usar apenas `siteRef` poderia fazer campanhas diferentes serem tratadas como a mesma linha.
+Escolhi `externalCampaignId` no Facebook porque um mesmo site pode ter mais de uma campanha no mesmo dia. Usar apenas `siteRef` poderia fazer campanhas diferentes serem tratadas como a mesma linha. Quando `facebook` ou `gam` chegam como `[]`, nenhuma operação é realizada para aquela fonte. Dessa forma, um payload vazio não apaga nem altera dados que já estejam persistidos.
 
-Quando `facebook` ou `gam` chegam como `[]`, nenhuma operação é realizada para aquela fonte. Dessa forma, um payload vazio não apaga nem altera dados que já estejam persistidos.
-
-No caso de um reenvio idêntico, nada é alterado. Se os valores forem diferentes, aplico `last-write-wins` e registro um aviso no log para deixar essa alteração visível.
-
-Os upserts do payload são executados dentro de uma transaction para evitar que apenas parte dos dados seja persistida caso alguma operação falhe.
+No caso de um reenvio idêntico, nada é alterado. Se os valores forem diferentes, aplico `last-write-wins` e registro um aviso no log para deixar essa alteração visível. Os upserts do payload são executados dentro de uma transaction para evitar que apenas parte dos dados seja persistida caso alguma operação falhe.
 
 ## 4. Módulo de dinheiro
 
