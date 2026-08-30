@@ -3,294 +3,178 @@
 ## 1. Modelagem e arquitetura
 
 Mantive a divisão que já veio pronta (`ingestion` / `money` / `reports` /
-`reconciliation` / `prisma`) — pra esse tamanho de problema, cada módulo já
-tem uma responsabilidade clara e um service só, não vi motivo pra
-fragmentar mais nem pra juntar nada.
+`reconciliation` / `prisma`) — pra esse tamanho de problema cada módulo já
+tem responsabilidade clara, não fragmentei nem juntei nada.
 
-O que eu acrescentei foi um `src/common/date.util.ts` com duas funções:
-`toUtcDateOnly` (normaliza qualquer string de data pra meia-noite UTC do
-mesmo dia civil) e `enumerateDays` (lista os dias entre `from`/`to`).
-Ingestão, relatório e reconciliação precisavam exatamente da mesma lógica
-de "que dia é esse, de verdade" — sem isso, cada um ia parsear data do seu
-jeito e a chance de um bug de fronteira de dia (a data mudar dependendo do
-timezone configurado no processo Node) ia ficar batendo em produção sem
-ninguém perceber em dev.
+Acrescentei `src/common/date.util.ts` (`toUtcDateOnly` e `enumerateDays`)
+porque ingestão, relatório e reconciliação precisavam da mesma lógica de
+"que dia é esse de verdade" — sem isso cada um ia parsear data do seu
+jeito, e um bug de fronteira de dia (timezone do processo Node) ia
+aparecer em produção sem ninguém notar em dev.
 
-Não criei nenhum módulo novo de "sites": `SiteMapping` é só uma tabela de
-referência, não tem lógica de negócio própria que justifique isolar isso.
-`ReportsService` e `ReconciliationService` continuam lendo `SiteMapping`
-direto via `PrismaService`.
+Também botei em `src/common/` um `AllExceptionsFilter` (pega qualquer
+erro não tratado e devolve uma resposta consistente em vez de 500 cru) e
+um `JsonLoggerService` (troca o logger padrão do Nest por log em JSON).
+Ficaram fora dos módulos de domínio porque não são específicos de
+nenhum — servem pra aplicação inteira.
 
-Também adicionei em `src/common/` um `JsonLoggerService` (implementa a
-interface `LoggerService` do Nest, plugado via `app.useLogger` no
-`main.ts`) e um `AllExceptionsFilter` (`@Catch()` global, plugado via
-`app.useGlobalFilters`). Nenhum dos dois é específico de um dos quatro
-domínios, então ficaram junto do `date.util.ts` em vez de dentro de
-`ingestion`/`reports`/etc. Mais sobre o porquê de cada um na seção 6.
+Não criei módulo de "sites": `SiteMapping` é só tabela de referência, sem
+lógica própria que justifique isolar. `ReportsService` e
+`ReconciliationService` continuam lendo direto via `PrismaService`.
 
 ## 2. Inconsistências encontradas
 
-Achei as quatro que o enunciado avisa que existem, e resolvi confirmar
-cada uma lendo o `seed.sql` linha a linha (com um script em vez de
-confiar na leitura visual) antes de decidir o que fazer com elas:
-
 **Duplicata do Facebook.** `seed-fb-15` e `seed-fb-dup-125` são a mesma
-linha duas vezes — `fb-site-nutrihealth-camp-1`, `2026-07-11`, mesmo
-`spend`, `impressions` e `clicks`, bit a bit. Essa é a única que eu de
-fato **corrigi** em vez de só sinalizar. Dois motivos pra isso não ser só
-um capricho: primeiro, com as duas linhas em pé o `GET /reports` soma o
-`spend` de `site-nutrihealth` em 2026-07-11 em dobro, o que estraga a
-conta de ROAS daquele dia; segundo, não dá pra criar um índice único
-sobre uma coluna que já tem duplicata — o Postgres recusa. Fiquei em
-dúvida se isso contraria o "não altere os dados históricos já seedados"
-do enunciado, mas entendo essa regra como "não reescreva um fato
-observado", e apagar uma cópia idêntica não muda fato nenhum, só remove
-uma redundância.
+linha duas vezes — `fb-site-nutrihealth-camp-1`, 2026-07-11, mesmo
+`spend`/`impressions`/`clicks`. Essa eu corrigi de verdade, não só
+sinalizei: com as duas em pé o relatório soma o `spend` em dobro naquele
+dia, e não dá pra criar índice único em cima de coluna já duplicada.
+Entendi o "não altere dado histórico" do enunciado como "não reescreva um
+fato observado" — apagar uma cópia idêntica não muda fato nenhum.
 
-Minha primeira tentativa foi só apagar a `seed-fb-dup-125` dentro da
-própria migration que cria a constraint (um `DELETE` antes do `CREATE
-UNIQUE INDEX`). Rodei o setup de verdade e isso não resolveu: `npm run
-prisma:seed` recarrega o `seed.sql` inteiro do zero toda vez que roda
-(é pra isso que o script existe), e o arquivo original ainda tinha o
-`INSERT` da `seed-fb-dup-125` — então, com a constraint já existindo no
-banco (a migration roda antes do seed, na ordem que o setup pede), o
-próprio carregamento do seed passou a falhar com "duplicate key value
-violates unique constraint", derrubando a transação inteira. A correção
-de verdade precisava estar no arquivo que gera o dado, não só no banco:
-tirei o `INSERT` da `seed-fb-dup-125` do `prisma/seed.sql` (deixando um
-comentário no lugar, explicando por quê) e mantive o `DELETE` na
-migration só como rede de segurança, pra quem porventura já tiver essa
-duplicata carregada de uma execução antiga. Acho importante deixar
-registrado que essa foi uma correção em duas voltas — a primeira ideia
-parecia certa no papel e só quebrou quando rodei o fluxo de setup de
-ponta a ponta.
+Primeira tentativa foi um `DELETE` na migration antes de criar a
+constraint. Não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro
+toda vez que roda, e o `INSERT` da duplicata continuava lá — com a
+constraint já criada, o próprio seed passou a quebrar com erro de chave
+duplicada. A correção real era tirar o `INSERT` do `seed.sql` (troquei
+por um comentário) e deixar o `DELETE` na migration só como rede de
+segurança pra quem já tiver a duplicata carregada de antes. Foi correção
+em duas voltas — a primeira parecia certa no papel e só quebrou rodando o
+setup ponta a ponta de verdade.
 
-**Dia sem `FxRate` (2026-07-21).** Os outros 29 dias de julho têm cotação,
-esse não tem. Decidi por carry-forward: uso a última cotação conhecida
-antes do dia (no caso, a de 07-20) e registro um aviso no log. Se não
-houver cotação anterior nenhuma no período (não acontece nesse seed, mas
-pode acontecer se alguém pedir um relatório que comece antes da primeira
-`FxRate` existente), a conversão daquele dia específico fica zerada e o
-`ReportsService` loga isso — não derrubo o relatório inteiro por causa de
-1 dia numa moeda.
+**Dia sem `FxRate` (2026-07-21).** Uso a cotação anterior (carry-forward)
+e loga aviso. Sem cotação anterior nenhuma no período, a conversão
+daquele dia zera e loga — não derruba o relatório inteiro por causa de
+1 dia.
 
-**Gap real de 5 dias no GAM do FITPRO_MAIN** (07-15 a 07-19, o Facebook do
-mesmo site tem os 30 dias completos). Não tratei isso como erro nem como
-dia pra pular: o `spend` do Facebook continua contando normal nesses
-dias, a receita do GAM entra como zero. É o reflexo correto de "gastou
-mídia, não teve receita GAM registrada" — e é também exatamente o cenário
-que o `GET /reconciliation/gaps` deveria apontar.
+**Gap de 5 dias no GAM do FITPRO_MAIN (07-15 a 07-19).** Não tratei como
+erro nem pulei o dia: `spend` do Facebook conta normal, receita GAM entra
+zero. É exatamente o que `/reconciliation/gaps` deveria pegar.
 
-**GAM órfão (`PROMOSAUDE_MAIN`).** Tem 30 linhas de receita no
-`GamAdMetric`, mas não existe em `SiteMapping` (nem como `gamSiteCode`,
-nem indiretamente). Sem `revSharePct`/`taxOnRevenuePct`/moeda, essa
-receita não tem como virar uma linha de relatório de verdade. Decidi
-sinalizar por omissão: o `ReportsService` parte de `SiteMapping`, então
-esse site nunca é alcançado — não é um filtro escondido, é consequência
-direta de como a query é montada. Não escrevi nada que detecte e reporte
-esse órfão ativamente porque isso não é pedido em nenhuma das rotas (nem
-`/reports`, nem `/reconciliation/gaps` fala de "site sem mapeamento");
-acho que caberia como melhoria futura, ver seção 6.
+**GAM órfão (`PROMOSAUDE_MAIN`).** 30 linhas de receita sem entrada em
+`SiteMapping` — sem `revShare`/tax/moeda não dá pra virar relatório.
+Sinalizei por omissão: `ReportsService` parte de `SiteMapping`, esse site
+nunca é alcançado. Não fiz alerta ativo porque nenhuma rota pede isso —
+fica de melhoria futura (seção 6).
 
 ## 3. Idempotência e resiliência da ingestão
 
 Chave natural: `(externalCampaignId, localDate)` no Facebook,
-`(siteCode, utcDate)` no GAM — virou `@@unique` no schema, com
-`upsert` do Prisma em cima. Preferi constraint no banco a checagem na
-aplicação porque, sob concorrência (dois webhooks do mesmo payload
-chegando quase juntos), um "select, depois decide se insere ou atualiza"
-feito na aplicação tem uma janela de corrida real; o banco resolvendo
-isso via índice único não tem.
+`(siteCode, utcDate)` no GAM — `@@unique` no schema + `upsert` do Prisma.
+Constraint no banco em vez de checagem na aplicação porque, sob
+concorrência, um "select, depois decide" feito na aplicação tem janela de
+corrida real; índice único no banco não tem.
 
-Vale registrar por que usei `externalCampaignId` e não simplesmente
-`siteRef` pro Facebook: no seed atual cada site só tem uma campanha
-(`site-nutrihealth` sempre usa `fb-site-nutrihealth-camp-1`, por exemplo),
-então `(siteRef, localDate)` passaria nos mesmos testes hoje. Mas o
-próprio README chama `FacebookAdMetric` de "uma linha por campanha/dia" —
-uma conta de anúncios real roda mais de uma campanha ao mesmo tempo no
-mesmo site, e se eu tivesse usado `siteRef` como chave, duas campanhas
-diferentes do mesmo site no mesmo dia colapsariam numa linha só na
-próxima vez que chegasse um webhook. É um bug que o seed de hoje não
-pegaria, mas que apareceria no primeiro dia com duas campanhas de verdade.
+Usei `externalCampaignId` e não `siteRef` pro Facebook porque o README
+chama `FacebookAdMetric` de "uma linha por campanha/dia" — uma conta real
+roda mais de uma campanha ao mesmo tempo no mesmo site. Com `siteRef`
+como chave, duas campanhas do mesmo site no mesmo dia colapsariam numa
+linha só. O seed de hoje não pegaria esse bug (cada site só tem uma
+campanha), mas ia aparecer no primeiro dia com duas campanhas de verdade.
 
-Arrays vazios (`facebook: []` ou `gam: []`) não geram nenhuma operação
-pra aquela fonte — o `processMetrics` monta a lista de upserts a partir
-do que veio no array, então uma fonte vazia simplesmente não contribui
-com nada, sem tocar em nenhuma linha já persistida da outra fonte.
+Array vazio não gera operação pra aquela fonte — `processMetrics` monta a
+lista de upserts a partir do que veio, fonte vazia não toca em nada da
+outra.
 
-Reenvio com o mesmo valor: upsert atualiza pra o mesmo valor, na prática
-um no-op. Reenvio com valor **diferente** do que já está salvo: decidi
-por last-write-wins (o upsert atualiza pra o novo valor). Não tem no
-payload nenhum jeito de saber se isso é uma correção legítima da rede de
-anúncios (cenário comum: número do dia D sai como "estimado" e depois
-volta "final") ou um dado pior chegando por engano — sem um campo de
-versão/timestamp de origem, ignorar reenvios divergentes esconderia
-correções reais, que me parece pior do que aceitar todas.
+Reenvio igual: o upsert vira um no-op na prática. Reenvio com valor
+diferente: last-write-wins. Não tem no payload como saber se é correção
+legítima (número "estimado" virando "final") ou dado pior chegando por
+engano — ignorar reenvio divergente esconderia correção real, que é pior.
 
-Todos os upserts de um mesmo payload rodam dentro de um único
-`$transaction` — se uma linha falhar no meio, nenhuma fica
-meio-persistida.
+Upserts de um payload rodam num `$transaction` só — uma linha falhando no
+meio não deixa nada meio-persistido.
 
-Uma coisa que eu tinha deixado só documentada aqui, sem estar visível em
-lugar nenhum do sistema: quando um reenvio muda um valor, `processMetrics`
-agora compara contra o que já está salvo (uma consulta antes dos upserts,
-fora da transação de escrita) e loga um aviso — `spend: 237.6 -> 260.0`,
-por exemplo — antes de aplicar o last-write-wins. Isso não muda o
-comportamento, só torna essa decisão auditável: hoje quem operasse esse
-sistema não teria como saber, sem abrir o banco, que um dia teve o
-número corrigido por baixo dos panos.
+`processMetrics` compara contra o que já está salvo antes de aplicar e
+loga um aviso quando um reenvio muda valor (`spend: 237.6 -> 260.0`, por
+exemplo). Não muda o comportamento, só deixa a correção auditável — sem
+isso ninguém saberia que um número mudou sem abrir o banco.
 
 ## 4. Módulo de dinheiro
 
-Usei `Prisma.Decimal` (`import { Prisma } from "@prisma-client"`) pra toda
-a conta dentro de `MoneyService#calculate`. Não é uma dependência nova —
-conferi no client gerado que `Decimal` já vem junto do `@prisma/client`,
-é o mesmo tipo que os campos `Decimal` do schema já usam, então não tem
-conversão extra entre "o tipo que vem do banco" e "o tipo que eu calculo
-com" nessa borda.
+`Prisma.Decimal` pra toda a conta do `MoneyService#calculate`. Não é
+dependência nova — já vem junto do `@prisma/client`, é o mesmo tipo que
+os campos `Decimal` do schema usam.
 
-A cadeia é a do README, na ordem exata, sem atalho algébrico:
-`netRevenueUsd` → `netRevenueAfterTaxUsd` → `netRevenueLocal` →
-`mediaCostWithTaxLocal` → `profitLocal` → `roas`. Isso importa mesmo
-sendo "matematicamente a mesma coisa" se fosse só multiplicação simples,
-por dois motivos: `taxOnRevenuePct` incide sobre a receita líquida (depois
-do revShare) e `taxOnMediaCostPct` incide sobre o custo de mídia — são
-bases diferentes, não dá pra comutar essas duas operações nem em teoria.
-E, na prática, arredondamento intermediário existe: se o câmbio fosse
-aplicado antes do tributo sobre receita, por exemplo, o tributo incidiria
-sobre um valor já convertido pra outra moeda, e a diferença aparece na
-2ª/3ª casa decimal exatamente como o README avisa.
+Cadeia na ordem exata do README: `netRevenueUsd` → `netRevenueAfterTaxUsd`
+→ `netRevenueLocal` → `mediaCostWithTaxLocal` → `profitLocal` → `roas`.
+Importa porque `taxOnRevenuePct` incide sobre receita líquida (pós
+revShare) e `taxOnMediaCostPct` incide sobre custo de mídia — bases
+diferentes, não dá pra trocar a ordem nem em teoria. E arredondamento
+intermediário muda o resultado na 2ª/3ª casa se você inverter, como o
+README já avisa.
 
-`MoneyInput`/`MoneyResult` são `number` — isso já veio pronto e não mudei,
-porque só criaria fricção sem ganho real (o valor já sai do banco como
-`Decimal` de no máximo 2-4 casas, então virar `number` na entrada e voltar
-pra `Decimal` dentro do `calculate` não perde nada). O que eu fiz questão
-de garantir é que nenhuma conta de fato acontece em cima desse `number`:
-ele só existe como formato de entrada/saída da função, tudo no meio é
-`Prisma.Decimal`, e o arredondamento final (2 casas pra tudo que é
-dinheiro, 4 pra `roas`, porque é um índice e o exemplo do README só bate
-com 4 casas) acontece uma vez só, no fim.
+`MoneyInput`/`MoneyResult` continuam `number` (já veio assim, não mudei)
+— sem problema porque nenhuma conta de fato roda em cima desse `number`,
+ele só é formato de entrada/saída; tudo no meio é `Decimal`, e o
+arredondamento acontece uma vez só no fim (2 casas pra dinheiro, 4 pro
+`roas`, porque o exemplo do README só bate com 4).
 
-`mediaCostWithTaxLocal = 0` faria o `roas` estourar numa divisão por
-zero. Decidi que isso retorna `0`, documentado — sem custo, não tem uma
-razão significativa pra reportar, e `0` é mais seguro pra quem consome
-essa API do que `Infinity`. Mesma lógica pro `cpa` no `ReportsService`
-quando `clicks = 0`.
+`mediaCostWithTaxLocal = 0` faria o `roas` dividir por zero — retorna `0`
+em vez de `Infinity`, mais seguro pra quem consome a API. Mesma lógica
+pro `cpa` no `ReportsService` quando `clicks = 0`.
 
 ## 5. Reconciliação de gaps
 
-`findGaps` gera a lista de dias do período uma vez, e busca com uma query
-por fonte (não uma por site nem por dia) quais pares (site, dia) já têm
-dado, usando `groupBy`. O que sobra depois de comparar contra a lista de
-dias esperada por site é o gap. Não fiz nada além de reportar isso na
-resposta — sem log adicional, sem tabela de alerta — porque nenhuma das
-duas rotas essenciais pede isso; deixei uma rotina que sinalize gaps
-ativamente como item de diferencial não implementado (seção 6).
+`findGaps` gera a lista de dias do período uma vez e busca, com
+`groupBy` (uma query por fonte, não por site nem por dia), quais pares
+(site, dia) já têm dado. O que sobra é o gap. Só reporto na resposta —
+sem log, sem alerta — porque nenhuma rota essencial pede mais que isso;
+rotina ativa de gap fica no diferencial (seção 6).
 
-Um detalhe que só percebi lendo o DTO com calma: o campo `site` de um gap
-usa `facebookSiteRef` quando a fonte é Facebook e `gamSiteCode` quando é
-GAM — não é o mesmo espaço de identificador entre as duas fontes. Achei
-importante deixar isso explícito aqui porque é o tipo de coisa fácil de
-implementar errado (usar sempre `facebookSiteRef`, por exemplo) sem o
-teste automatizado pegar se você não tiver casos dos dois lados.
+O campo `site` de um gap usa `facebookSiteRef` quando a fonte é Facebook
+e `gamSiteCode` quando é GAM — não é o mesmo espaço de identificador
+entre as duas. Vale registrar porque é fácil implementar errado (usar
+sempre um dos dois) e o teste só pega isso se tiver caso dos dois lados.
 
 ## 6. Trade-offs e o que ficou de fora
 
-Os testes (`vitest`) cobrem os quatro services: `MoneyService` é teste
-unitário puro (sem banco), batendo exato com o exemplo do README, o caso
-de site USD com tributos zerados, `mediaCostWithTaxLocal = 0` dando `roas
-= 0`, e um caso de entrada com muitas casas decimais cujo resultado eu
-conferi à parte em Python com `Decimal` (não confiei só no meu próprio
-código pra validar meu próprio código). Os outros três — `Ingestion`,
-`Reports`, `Reconciliation` — são testes de integração de verdade, contra
-o mesmo Postgres do `docker compose` (esse projeto não tem uma base de
-teste separada), cada um usando um prefixo próprio de id/site/data (tudo
-em 2030) pra nunca encostar no que o `seed.sql` já colocou lá nem nos
-dados de outro spec. Reenvio idêntico e reenvio com valor diferente na
-ingestão são testados chamando `processMetrics` duas vezes de verdade
-(não só inspecionando se o Prisma foi chamado certo); o relatório testa
-um cenário com os dois tipos de gap do seed real (spend sem receita GAM,
-dia sem `FxRate`) montado à mão, com o resultado esperado calculado à
-parte; a reconciliação confere que o `site` de cada gap usa o
+Testes: `MoneyService` é unitário puro — bate com o exemplo do README, o
+caso USD sem tributo, e custo zero dando `roas = 0`. `AllExceptionsFilter`
+também é unitário, mockando `ArgumentsHost`, sem banco. `Ingestion`,
+`Reports` e `Reconciliation` são integração de verdade contra o Postgres
+do `docker compose`, cada um com prefixo próprio de id/site/data (2030)
+pra não encostar no seed nem em outro spec. Reenvio idêntico e reenvio
+divergente testam chamando `processMetrics` duas vezes de verdade; o
+relatório testa os dois tipos de gap do seed real montados à mão, com
+resultado calculado à parte; a reconciliação confere que o `site` usa o
 identificador certo por fonte.
 
-`npm test` rodou de verdade (18/18 passando, já incluindo o teste do log
-de divergência) depois do `prisma:migrate` + `prisma:seed`, e além disso
-as 3 rotas foram batidas manualmente contra a API rodando de verdade (via
-Insomnia): idempotência do webhook enviando o mesmo payload duas vezes
-seguidas e conferindo que o relatório não muda, `GET /reports` pro mês
-inteiro contra os 4 sites e `GET /reconciliation/gaps` contra os 5 dias
-reais de gap do `FITPRO_MAIN` — todos batendo exatamente com os números
-que eu tinha calculado à parte em Python antes de rodar. O log de
-divergência apareceu de verdade no output do teste, com a linha de WARN
-mostrando o valor antigo e o novo — não ficou só passando no papel.
+`npm test`: 22/22 passando, migrate + seed rodados de verdade — incluindo
+o log de divergência aparecendo no output com WARN mostrando valor antigo
+e novo. As 3 rotas também foram batidas na mão via Insomnia contra a API
+rodando: idempotência do webhook (mesmo payload duas vezes, relatório não
+muda), `GET /reports` do mês inteiro contra os 4 sites, `GET
+/reconciliation/gaps` contra os 5 dias reais do FITPRO_MAIN — tudo
+batendo com número calculado à parte em Python.
 
-Dos três itens de diferencial do README, encerrei dois:
+Do diferencial, fechei dois dos três. Testes além do caminho feliz: feito
+(idempotência, payload vazio, roas zerado, gaps). Tratamento de erro e
+observabilidade: feito — `AllExceptionsFilter` trata erro do Prisma como
+409 em vez de 500 cru e loga tudo, `JsonLoggerService` bota isso (e os
+logs de negócio que já existiam) em JSON. Ficou de fora a rotina ativa de
+alerta de gap — hoje alguém só descobre um gap se pensar em chamar a
+rota; seria o próximo passo com mais tempo.
 
-- **Testes além do caminho feliz**: idempotência (reenvio idêntico e
-  reenvio com valor diferente, pra Facebook e pra GAM), payload vazio,
-  ROAS zerado com custo zero, e os três cenários de gap — todos cobertos,
-  como descrito acima.
-- **Tratamento de erros e observabilidade**: no começo eu só tinha os
-  logs de negócio (o de divergência na ingestão e o de câmbio faltando no
-  relatório) — isso é observabilidade, mas não é tratamento de erro; sem
-  mais nada, qualquer exceção não prevista (erro do Prisma, bug bobo)
-  caía no 500 cru padrão do Express, sem log estruturado nenhum. Fechei
-  isso com duas peças em `src/common/`: `AllExceptionsFilter`, um
-  `@Catch()` global que intercepta qualquer exceção, trata
-  `PrismaClientKnownRequestError` como 409 (é conflito de dado, não bug
-  de código) e qualquer outra coisa não prevista como 500 sem vazar
-  detalhe interno pra fora — e loga tudo com método/rota/stack antes de
-  responder; e `JsonLoggerService`, que substitui o logger padrão do Nest
-  (via `app.useLogger` no `main.ts`) por um que imprime cada linha como
-  JSON, formato que faz sentido pra um coletor de log de verdade e que os
-  `Logger.warn` que já existiam em `IngestionService`/`ReportsService`
-  passam a usar automaticamente, sem precisar tocar nesses arquivos (o
-  Nest compartilha uma referência estática por trás de todo `new
-  Logger(contexto)`).
-
-Fica faltando o terceiro:
-
-- **Rotina que sinalize gaps ativamente**: não implementei — com mais
-  tempo, seria o próximo item, porque hoje alguém só descobre um gap se
-  pensar em chamar `GET /reconciliation/gaps`.
-
-`AllExceptionsFilter` tem 4 testes unitários (`all-exceptions.filter.spec.ts`),
-sem banco, só mockando `ArgumentsHost`: `HttpException` normal passa
-igual, mensagem em array (tipo class-validator) vira uma string só,
-`PrismaClientKnownRequestError` vira 409, e qualquer outro erro vira 500
-genérico sem detalhe interno. `tsc --noEmit` rodou limpo depois dessa
-mudança, mas não consegui rodar o `npm test` de novo pra confirmar esses
-4 casos — mesma limitação de sempre do meu lado (binário nativo do
-vitest não roda no meu ambiente). Deveria passar, são mocks simples sem
-dependência de banco, mas fica pra você confirmar rodando local.
-
-
-Também não tratei o `PROMOSAUDE_MAIN` (o site órfão do GAM) de nenhuma
-forma além de deixá-lo de fora do relatório por consequência da query.
-Se isso fosse um sistema de verdade, eu preferiria um alerta separado
-tipo "existe receita GAM chegando de um site que ninguém mapeou ainda",
-porque isso normalmente significa dinheiro sendo perdido de vista, não
-só um dado quebrado.
+Também não tratei o `PROMOSAUDE_MAIN` (site órfão) além de deixá-lo fora
+do relatório por consequência da query. Num sistema de verdade eu
+preferiria um alerta tipo "tem receita GAM chegando de site sem
+mapeamento" — isso normalmente é dinheiro sendo perdido de vista, não só
+dado quebrado.
 
 ## 7. Escala
 
-Relatório e reconciliação já nascem sem N+1 — agregação em `groupBy`, uma
-query por fonte, não por site nem por dia. A 100x eu trocaria a
-reconciliação pela versão com `generate_series` + `LEFT JOIN` em SQL cru
-(o Postgres devolve só os gaps direto, sem trazer as linhas de métrica
-pra memória) e cogitaria paginar o `GET /reports` por site se o número de
-sites crescesse de verdade (hoje são 4, isso só importa na casa das
-centenas/milhares).
+Relatório e reconciliação já não têm N+1 — `groupBy`, uma query por
+fonte. A 100x trocaria a reconciliação por `generate_series` + `LEFT
+JOIN` em SQL cru (o Postgres devolve só o gap, sem trazer métrica pra
+memória) e paginaria `GET /reports` por site se o número de sites
+crescesse de verdade (hoje são 4).
 
-Na ingestão, o `$transaction` de upserts por payload é ok pro tamanho de
-um webhook normal (algumas linhas). Se um payload viesse com milhares de
-linhas de uma vez, trocaria por um `INSERT ... ON CONFLICT DO UPDATE` em
-lote (`$executeRaw` com múltiplos `VALUES`) em vez de N upserts
-sequenciais.
+Na ingestão, o `$transaction` de upserts é ok pro tamanho de um webhook
+normal. Um payload com milhares de linhas eu trocaria por `INSERT ... ON
+CONFLICT DO UPDATE` em lote em vez de N upserts sequenciais — evita
+quebrar em produção.
 
-Se o relatório virasse hot-path (o mesmo período fechado sendo consultado
-toda hora, tipo "mês passado"), os dias já fechados não mudam mais — daria
-pra ter uma tabela de agregado diário pré-calculado, atualizada na própria
-ingestão, trocando leitura pesada recorrente por escrita incremental. Não
-fiz isso agora porque o volume atual não justifica a complexidade.
+Se o relatório virasse hot-path (mesmo período fechado consultado toda
+hora), dia fechado não muda mais — daria pra ter um agregado diário
+pré-calculado, atualizado na própria ingestão. Não fiz porque o volume
+atual não justifica.
