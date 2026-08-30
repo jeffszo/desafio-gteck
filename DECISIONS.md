@@ -24,13 +24,15 @@ lógica própria que justifique isolar. `ReportsService` e
 
 ## 2. Inconsistências encontradas
 
-**Duplicata do Facebook.** `seed-fb-15` e `seed-fb-dup-125` são a mesma
-linha duas vezes — `fb-site-nutrihealth-camp-1`, 2026-07-11, mesmo
-`spend`/`impressions`/`clicks`. Essa eu corrigi de verdade, não só
-sinalizei: com as duas em pé o relatório soma o `spend` em dobro naquele
-dia, e não dá pra criar índice único em cima de coluna já duplicada.
-Entendi o "não altere dado histórico" do enunciado como "não reescreva um
-fato observado" — apagar uma cópia idêntica não muda fato nenhum.
+### Duplicata do Facebook
+
+`seed-fb-15` e `seed-fb-dup-125` são a mesma linha duas vezes —
+`fb-site-nutrihealth-camp-1`, 2026-07-11, mesmo `spend`/`impressions`/
+`clicks`. Essa eu corrigi de verdade, não só sinalizei: com as duas em pé
+o relatório soma o `spend` em dobro naquele dia, e não dá pra criar
+índice único em cima de coluna já duplicada. Entendi o "não altere dado
+histórico" do enunciado como "não reescreva um fato observado" — apagar
+uma cópia idêntica não muda fato nenhum.
 
 Primeira tentativa foi um `DELETE` na migration antes de criar a
 constraint. Não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro
@@ -42,8 +44,10 @@ segurança pra quem já tiver a duplicata carregada de antes. Foi correção
 em duas voltas — a primeira parecia certa no papel e só quebrou rodando o
 setup ponta a ponta de verdade.
 
-**Dia sem `FxRate` (2026-07-21).** Uso a cotação anterior (carry-forward)
-e loga aviso — é o que qualquer sistema financeiro faz quando falta a
+### Dia sem `FxRate`
+
+Dia 2026-07-21 não tem cotação. Uso a cotação anterior (carry-forward) e
+loga aviso — é o que qualquer sistema financeiro faz quando falta a
 cotação de um dia específico. Quando não existe cotação nenhuma antes do
 dia (não acontece no seed, mas pode acontecer se o período pedido
 começar antes da primeira `FxRate` existente), prefiro não inventar uma
@@ -56,11 +60,13 @@ Numa API de produção eu não deixaria essa ambiguidade: sinalizaria esse
 dia como dado incompleto de algum jeito, em vez de misturar com zero de
 verdade.
 
-**Gap de 5 dias no GAM do FITPRO_MAIN (07-15 a 07-19).** Não tratei como
-erro nem pulei o dia: `spend` do Facebook conta normal, receita GAM entra
-zero. É exatamente o que `/reconciliation/gaps` deveria pegar.
+### Gaps e dados órfãos
 
-**GAM órfão (`PROMOSAUDE_MAIN`).** 30 linhas de receita sem entrada em
+O gap de 5 dias no GAM do FITPRO_MAIN (07-15 a 07-19) não é erro nem dia
+pra pular: `spend` do Facebook conta normal, receita GAM entra zero. É
+exatamente o que `/reconciliation/gaps` deveria pegar.
+
+`PROMOSAUDE_MAIN` tem 30 linhas de receita no GAM sem entrada em
 `SiteMapping` — sem `revShare`/tax/moeda não dá pra virar relatório.
 Sinalizei por omissão: `ReportsService` parte de `SiteMapping`, esse site
 nunca é alcançado. Não fiz alerta ativo porque nenhuma rota pede isso —
