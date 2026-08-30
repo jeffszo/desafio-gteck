@@ -113,7 +113,7 @@ describe("ReportsService#getReport", () => {
     await testPrisma.$disconnect();
   });
 
-  it("agrega o período inteiro batendo com a conta feita à mão)", async () => {
+  it("agrega o período inteiro batendo com a conta feita à mão", async () => {
     const [entry] = await service.getReport("2030-01-01", "2030-01-05", SITE_REF);
 
     expect(entry).toBeDefined();
