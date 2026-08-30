@@ -207,16 +207,16 @@ dia sem `FxRate`) montado à mão, com o resultado esperado calculado à
 parte; a reconciliação confere que o `site` de cada gap usa o
 identificador certo por fonte.
 
-`npm test` rodou de verdade (17/17 passando) depois do `prisma:migrate` +
-`prisma:seed`, e além disso as 3 rotas foram batidas manualmente contra a
-API rodando de verdade (via Insomnia): idempotência do webhook enviando o
-mesmo payload duas vezes seguidas e conferindo que o relatório não muda,
-`GET /reports` pro mês inteiro contra os 4 sites e `GET
-/reconciliation/gaps` contra os 5 dias reais de gap do `FITPRO_MAIN` —
-todos batendo exatamente com os números que eu tinha calculado à parte em
-Python antes de rodar. O teste novo do log de divergência (descrito no parágrafo
-abaixo) foi escrito depois dessa rodada e ainda não foi confirmado rodando —
-deveria passar, mas não tive como validar isso da minha parte.
+`npm test` rodou de verdade (18/18 passando, já incluindo o teste do log
+de divergência) depois do `prisma:migrate` + `prisma:seed`, e além disso
+as 3 rotas foram batidas manualmente contra a API rodando de verdade (via
+Insomnia): idempotência do webhook enviando o mesmo payload duas vezes
+seguidas e conferindo que o relatório não muda, `GET /reports` pro mês
+inteiro contra os 4 sites e `GET /reconciliation/gaps` contra os 5 dias
+reais de gap do `FITPRO_MAIN` — todos batendo exatamente com os números
+que eu tinha calculado à parte em Python antes de rodar. O log de
+divergência apareceu de verdade no output do teste, com a linha de WARN
+mostrando o valor antigo e o novo — não ficou só passando no papel.
 
 Do diferencial, implementei o log de divergência na ingestão (`spend:
 237.6 -> 260.0`, avisando quando um reenvio muda um valor já persistido)
