@@ -25,7 +25,6 @@ describe("MoneyService#calculate", () => {
   });
 
   it("site em USD (fxRate = 1) não sofre conversão nenhuma", () => {
-    // espelha vida-ativa/bem-estar do seed: tributos zerados, moeda já é USD
     const result = service.calculate({
       grossRevenueUsd: 1000,
       revSharePct: 0.3,
@@ -71,10 +70,7 @@ describe("MoneyService#calculate", () => {
       taxOnMediaCostPct: 0.0333,
     });
 
-    // conferido à parte com decimal.Decimal em Python, arredondamento
-    // meio-pra-cima -- se der um valor bem próximo mas não exatamente
-    // esse, é sinal de ponto flutuante binário entrando na conta em
-    // algum passo da cadeia.
+
     expect(result).toEqual({
       netRevenueUsd: 22.22,
       netRevenueAfterTaxUsd: 19.75,

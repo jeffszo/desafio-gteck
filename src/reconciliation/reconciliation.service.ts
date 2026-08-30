@@ -17,9 +17,6 @@ export class ReconciliationService {
     const toDate = toUtcDateOnly(to);
     const days = enumerateDays(from, to);
 
-    // Uma query por fonte pra saber quais (site, dia) já têm dado no
-    // período -- não uma query por dia por site, que seria O(dias x
-    // sites) idas ao banco e não escalaria.
     const [fbRows, gamRows] = await Promise.all([
       this.prisma.facebookAdMetric.groupBy({
         by: ["siteRef", "localDate"],
@@ -43,10 +40,7 @@ export class ReconciliationService {
     const gaps: GapReport[] = [];
     for (const site of sites) {
       for (const day of days) {
-        // Atenção: o identificador de site muda com a fonte -- é
-        // facebookSiteRef pra gaps do Facebook e gamSiteCode pra gaps do
-        // GAM (são espaços de nome diferentes, não o mesmo id). Ver
-        // comentário do GapReportOutputDto.
+  
         if (!fbPresent.has(`${site.facebookSiteRef}|${day}`)) {
           gaps.push({ source: MetricSource.Facebook, site: site.facebookSiteRef, date: day });
         }

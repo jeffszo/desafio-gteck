@@ -9,29 +9,12 @@ export class IngestionService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // facebook/gam vazios ([]) não fazem nada com a outra fonte -- o loop
-  // abaixo simplesmente não gera operação nenhuma pra fonte que veio
-  // vazia, então uma linha já persistida nunca é tocada por um payload
-  // que não fala dela.
-  //
-  // Idempotência: upsert pela chave natural de cada tabela
-  // (externalCampaignId+localDate no Facebook, siteCode+utcDate no GAM,
-  // ambas agora @@unique no schema -- ver a migration
-  // 20260830140000_ingestion_idempotency_keys). Reenviar o mesmo payload
-  // vira upsert com os mesmos valores, ou seja, um no-op de fato. Um
-  // reenvio com valor diferente do já persistido é tratado como
-  // last-write-wins (a linha é atualizada) -- não tem no payload nenhum
-  // jeito de distinguir "correção legítima da rede de anúncios" de "dado
-  // pior", e ignorar reenvios divergentes esconderia correções reais. Ver
-  // DECISIONS.md, seção 3.
+  
   async processMetrics(
     facebook: FacebookMetricInput[],
     gam: GamMetricInput[],
   ): Promise<void> {
-    // Log de observabilidade, não afeta o que é persistido: antes de
-    // escrever, compara contra o que já existe e avisa quando um reenvio
-    // muda um valor que já estava salvo. É a decisão da seção 3 do
-    // DECISIONS.md ficando visível em produção, não só documentada.
+ 
     await this.logDivergentResends(facebook, gam);
 
     const operations = [
@@ -43,8 +26,7 @@ export class IngestionService {
       return;
     }
 
-    // Um único payload vira uma única transação: se uma linha falhar no
-    // meio, nenhuma linha desse webhook fica meio-persistida.
+ 
     await this.prisma.$transaction(operations);
   }
 

@@ -4,8 +4,7 @@ import { IngestionService } from "./ingestion.service";
 import { testPrisma } from "../test/prisma-test-client";
 import { toUtcDateOnly } from "../common/date.util";
 
-// Prefixo só desse arquivo, pra limpar no fim sem arriscar apagar nada de
-// outro spec nem do seed.
+
 const CAMPAIGN_PREFIX = "vitest-ingestion";
 const SITE_CODE_PREFIX = "VITEST_INGESTION";
 
@@ -88,9 +87,7 @@ describe("IngestionService#processMetrics", () => {
       clicks: 100,
     };
 
-    // O mesmo webhook "entregue" duas vezes -- é o cenário do
-    // seed-fb-15/seed-fb-dup-125, só que testado contra o comportamento
-    // real do endpoint, não contra dado pré-existente no seed.
+
     await service.processMetrics([payload], []);
     await service.processMetrics([payload], []);
 
@@ -162,8 +159,6 @@ describe("IngestionService#processMetrics", () => {
       ],
     );
 
-    // Reprocessa com os dois arrays vazios -- não pode zerar/apagar a
-    // linha de GAM que acabou de ser criada.
     await service.processMetrics([], []);
 
     const gamRow = await testPrisma.gamAdMetric.findUnique({

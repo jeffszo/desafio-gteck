@@ -2,7 +2,7 @@ export interface MoneyInput {
   grossRevenueUsd: number;
   revSharePct: number;
   taxOnRevenuePct: number;
-  fxRate: number; // 1 se o site já é USD
+  fxRate: number; 
   mediaCostLocal: number;
   taxOnMediaCostPct: number;
 }

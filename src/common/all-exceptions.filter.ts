@@ -13,17 +13,7 @@ interface ErrorBody {
   message: string;
 }
 
-// Rede de segurança pra qualquer coisa que escape dos services: sem isso,
-// um erro do Prisma (ex.: violação de constraint que passou batido) ou
-// qualquer exceção não tratada vira um 500 cru do Express, sem log
-// nenhum e sem corpo consistente pra quem chamou a API. Com o filtro,
-// toda exceção passa por um lugar só, vira uma resposta JSON previsível e
-// fica registrada no logger (estruturado, ver JsonLoggerService) com
-// método/rota e stack trace.
-//
-// Erros de validação de DTO (class-validator) e afins continuam saindo
-// como HttpException normal -- esse filtro não muda esse caminho, só
-// captura tudo que não era esperado.
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -60,9 +50,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return { status, body: { statusCode: status, message } };
     }
 
-    // Erro conhecido do Prisma (violação de constraint, registro não
-    // encontrado, etc.) -- não é bug de programação, é conflito de dado.
-    // Trata como 409 em vez de deixar virar 500 genérico.
+
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       return {
         status: HttpStatus.CONFLICT,

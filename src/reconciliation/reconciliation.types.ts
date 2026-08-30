@@ -5,11 +5,6 @@ export enum MetricSource {
 
 export interface GapReport {
   source: MetricSource;
-
-  // facebookSiteRef (se source === MetricSource.Facebook) ou gamSiteCode
-  // (se source === MetricSource.Gam).
   site: string;
-
-  // Dia sem dado, formato YYYY-MM-DD.
   date: string;
 }
