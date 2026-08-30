@@ -43,9 +43,18 @@ em duas voltas — a primeira parecia certa no papel e só quebrou rodando o
 setup ponta a ponta de verdade.
 
 **Dia sem `FxRate` (2026-07-21).** Uso a cotação anterior (carry-forward)
-e loga aviso. Sem cotação anterior nenhuma no período, a conversão
-daquele dia zera e loga — não derruba o relatório inteiro por causa de
-1 dia.
+e loga aviso — é o que qualquer sistema financeiro faz quando falta a
+cotação de um dia específico. Quando não existe cotação nenhuma antes do
+dia (não acontece no seed, mas pode acontecer se o período pedido
+começar antes da primeira `FxRate` existente), prefiro não inventar uma
+taxa: zero a receita local daquele dia e loga o aviso, em vez de supor um
+câmbio que não tenho como sustentar. Isso tem um limite que vale
+reconhecer — `0` fica ambíguo entre "não teve receita" e "não deu pra
+calcular". Pra esse desafio, zero mantém o contrato da API simples (o
+campo continua `number`, sem precisar de um terceiro estado tipo `null`).
+Numa API de produção eu não deixaria essa ambiguidade: sinalizaria esse
+dia como dado incompleto de algum jeito, em vez de misturar com zero de
+verdade.
 
 **Gap de 5 dias no GAM do FITPRO_MAIN (07-15 a 07-19).** Não tratei como
 erro nem pulei o dia: `spend` do Facebook conta normal, receita GAM entra
@@ -103,11 +112,13 @@ diferentes, não dá pra trocar a ordem nem em teoria. E arredondamento
 intermediário muda o resultado na 2ª/3ª casa se você inverter, como o
 README já avisa.
 
-`MoneyInput`/`MoneyResult` continuam `number` (já veio assim, não mudei)
-— sem problema porque nenhuma conta de fato roda em cima desse `number`,
-ele só é formato de entrada/saída; tudo no meio é `Decimal`, e o
-arredondamento acontece uma vez só no fim (2 casas pra dinheiro, 4 pro
-`roas`, porque o exemplo do README só bate com 4).
+`MoneyInput`/`MoneyResult` continuam `number` — o contrato já veio
+definido assim, não mudei. Isso é só o formato de entrada e saída da
+função: nenhuma conta roda em cima desse `number`. Tudo que acontece
+dentro do `calculate` é `Prisma.Decimal`, e ele só volta a virar `number`
+no fim, depois do arredondamento (2 casas pra dinheiro, 4 pro `roas`,
+porque o exemplo do README só bate com 4). Ponto flutuante binário nunca
+entra na conta em si, só na borda de entrada e saída.
 
 `mediaCostWithTaxLocal = 0` faria o `roas` dividir por zero — retorna `0`
 em vez de `Infinity`, mais seguro pra quem consome a API. Mesma lógica
