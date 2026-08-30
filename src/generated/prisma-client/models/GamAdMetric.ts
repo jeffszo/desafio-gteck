@@ -272,6 +272,7 @@ export type GamAdMetricOrderByWithRelationInput = {
 
 export type GamAdMetricWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  gamMetricNaturalKey?: Prisma.GamAdMetricGamMetricNaturalKeyCompoundUniqueInput
   AND?: Prisma.GamAdMetricWhereInput | Prisma.GamAdMetricWhereInput[]
   OR?: Prisma.GamAdMetricWhereInput[]
   NOT?: Prisma.GamAdMetricWhereInput | Prisma.GamAdMetricWhereInput[]
@@ -283,7 +284,7 @@ export type GamAdMetricWhereUniqueInput = Prisma.AtLeast<{
   impressions?: Prisma.IntFilter<"GamAdMetric"> | number
   adRequests?: Prisma.IntFilter<"GamAdMetric"> | number
   createdAt?: Prisma.DateTimeFilter<"GamAdMetric"> | Date | string
-}, "id">
+}, "id" | "gamMetricNaturalKey">
 
 export type GamAdMetricOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -399,6 +400,11 @@ export type GamAdMetricUncheckedUpdateManyInput = {
   impressions?: Prisma.IntFieldUpdateOperationsInput | number
   adRequests?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type GamAdMetricGamMetricNaturalKeyCompoundUniqueInput = {
+  siteCode: string
+  utcDate: Date | string
 }
 
 export type GamAdMetricCountOrderByAggregateInput = {

@@ -25,6 +25,7 @@ model FacebookAdMetric {
   clicks             Int
   createdAt          DateTime @default(now())
 
+  @@unique([externalCampaignId, localDate], name: "facebookMetricNaturalKey")
   @@index([siteRef, localDate])
 }
 
@@ -42,6 +43,7 @@ model GamAdMetric {
   adRequests   Int
   createdAt    DateTime @default(now())
 
+  @@unique([siteCode, utcDate], name: "gamMetricNaturalKey")
   @@index([siteCode, utcDate])
 }
 

@@ -290,6 +290,7 @@ export type FacebookAdMetricOrderByWithRelationInput = {
 
 export type FacebookAdMetricWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  facebookMetricNaturalKey?: Prisma.FacebookAdMetricFacebookMetricNaturalKeyCompoundUniqueInput
   AND?: Prisma.FacebookAdMetricWhereInput | Prisma.FacebookAdMetricWhereInput[]
   OR?: Prisma.FacebookAdMetricWhereInput[]
   NOT?: Prisma.FacebookAdMetricWhereInput | Prisma.FacebookAdMetricWhereInput[]
@@ -303,7 +304,7 @@ export type FacebookAdMetricWhereUniqueInput = Prisma.AtLeast<{
   impressions?: Prisma.IntFilter<"FacebookAdMetric"> | number
   clicks?: Prisma.IntFilter<"FacebookAdMetric"> | number
   createdAt?: Prisma.DateTimeFilter<"FacebookAdMetric"> | Date | string
-}, "id">
+}, "id" | "facebookMetricNaturalKey">
 
 export type FacebookAdMetricOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -437,6 +438,11 @@ export type FacebookAdMetricUncheckedUpdateManyInput = {
   impressions?: Prisma.IntFieldUpdateOperationsInput | number
   clicks?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type FacebookAdMetricFacebookMetricNaturalKeyCompoundUniqueInput = {
+  externalCampaignId: string
+  localDate: Date | string
 }
 
 export type FacebookAdMetricCountOrderByAggregateInput = {

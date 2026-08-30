@@ -135,7 +135,14 @@ INSERT INTO "FacebookAdMetric" (id, "externalCampaignId", "campaignName", "siteR
 INSERT INTO "FacebookAdMetric" (id, "externalCampaignId", "campaignName", "siteRef", "localDate", "accountTimezone", "accountCurrency", spend, impressions, clicks) VALUES ('seed-fb-123', 'fb-site-bemestar-camp-1', 'Bem Estar - Prospecting', 'site-bemestar', '2026-07-29', 'America/New_York', 'USD', 256.5, 9036, 190);
 INSERT INTO "FacebookAdMetric" (id, "externalCampaignId", "campaignName", "siteRef", "localDate", "accountTimezone", "accountCurrency", spend, impressions, clicks) VALUES ('seed-fb-124', 'fb-site-bemestar-camp-1', 'Bem Estar - Prospecting', 'site-bemestar', '2026-07-30', 'America/New_York', 'USD', 257.85, 9073, 191);
 
-INSERT INTO "FacebookAdMetric" (id, "externalCampaignId", "campaignName", "siteRef", "localDate", "accountTimezone", "accountCurrency", spend, impressions, clicks) VALUES ('seed-fb-dup-125', 'fb-site-nutrihealth-camp-1', 'Nutri Health - Prospecting', 'site-nutrihealth', '2026-07-11', 'America/Sao_Paulo', 'BRL', 237.6, 8370, 176);
+-- seed-fb-dup-125 removida: era uma cópia byte a byte de seed-fb-15
+-- (mesmo externalCampaignId+localDate, mesmo spend/impressions/clicks),
+-- simulando um webhook reenviado antes de existir idempotência. Com a
+-- constraint @@unique(externalCampaignId, localDate) que a migration
+-- 20260830140000_ingestion_idempotency_keys adiciona, esse INSERT
+-- passaria a falhar toda vez que este arquivo fosse re-executado (é o
+-- que `npm run prisma:seed` faz: apaga tudo e recarrega do zero). Ver
+-- DECISIONS.md, seção 2, pra essa história completa.
 
 INSERT INTO "GamAdMetric" (id, "networkCode", "siteCode", "utcDate", "currencyCode", "adRevenue", impressions, "adRequests") VALUES ('seed-gam-126', 'network-001', 'NUTRIHEALTH_MAIN', '2026-07-01', 'USD', 31.92, 7600, 8740);
 INSERT INTO "GamAdMetric" (id, "networkCode", "siteCode", "utcDate", "currencyCode", "adRevenue", impressions, "adRequests") VALUES ('seed-gam-127', 'network-001', 'NUTRIHEALTH_MAIN', '2026-07-02', 'USD', 32.09, 7641, 8787);
