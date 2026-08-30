@@ -21,6 +21,13 @@ referência, não tem lógica de negócio própria que justifique isolar isso.
 `ReportsService` e `ReconciliationService` continuam lendo `SiteMapping`
 direto via `PrismaService`.
 
+Também adicionei em `src/common/` um `JsonLoggerService` (implementa a
+interface `LoggerService` do Nest, plugado via `app.useLogger` no
+`main.ts`) e um `AllExceptionsFilter` (`@Catch()` global, plugado via
+`app.useGlobalFilters`). Nenhum dos dois é específico de um dos quatro
+domínios, então ficaram junto do `date.util.ts` em vez de dentro de
+`ingestion`/`reports`/etc. Mais sobre o porquê de cada um na seção 6.
+
 ## 2. Inconsistências encontradas
 
 Achei as quatro que o enunciado avisa que existem, e resolvi confirmar
@@ -218,12 +225,46 @@ que eu tinha calculado à parte em Python antes de rodar. O log de
 divergência apareceu de verdade no output do teste, com a linha de WARN
 mostrando o valor antigo e o novo — não ficou só passando no papel.
 
-Do diferencial, implementei o log de divergência na ingestão (`spend:
-237.6 -> 260.0`, avisando quando um reenvio muda um valor já persistido)
-e já tinha o log de aviso de câmbio faltando em `ReportsService`. Não
-implementei uma rotina ativa que rode `findGaps` periodicamente e
-notifique sozinha — com mais tempo, seria o próximo item, porque hoje
-alguém só descobre um gap se pensar em chamar a rota.
+Dos três itens de diferencial do README, encerrei dois:
+
+- **Testes além do caminho feliz**: idempotência (reenvio idêntico e
+  reenvio com valor diferente, pra Facebook e pra GAM), payload vazio,
+  ROAS zerado com custo zero, e os três cenários de gap — todos cobertos,
+  como descrito acima.
+- **Tratamento de erros e observabilidade**: no começo eu só tinha os
+  logs de negócio (o de divergência na ingestão e o de câmbio faltando no
+  relatório) — isso é observabilidade, mas não é tratamento de erro; sem
+  mais nada, qualquer exceção não prevista (erro do Prisma, bug bobo)
+  caía no 500 cru padrão do Express, sem log estruturado nenhum. Fechei
+  isso com duas peças em `src/common/`: `AllExceptionsFilter`, um
+  `@Catch()` global que intercepta qualquer exceção, trata
+  `PrismaClientKnownRequestError` como 409 (é conflito de dado, não bug
+  de código) e qualquer outra coisa não prevista como 500 sem vazar
+  detalhe interno pra fora — e loga tudo com método/rota/stack antes de
+  responder; e `JsonLoggerService`, que substitui o logger padrão do Nest
+  (via `app.useLogger` no `main.ts`) por um que imprime cada linha como
+  JSON, formato que faz sentido pra um coletor de log de verdade e que os
+  `Logger.warn` que já existiam em `IngestionService`/`ReportsService`
+  passam a usar automaticamente, sem precisar tocar nesses arquivos (o
+  Nest compartilha uma referência estática por trás de todo `new
+  Logger(contexto)`).
+
+Fica faltando o terceiro:
+
+- **Rotina que sinalize gaps ativamente**: não implementei — com mais
+  tempo, seria o próximo item, porque hoje alguém só descobre um gap se
+  pensar em chamar `GET /reconciliation/gaps`.
+
+`AllExceptionsFilter` tem 4 testes unitários (`all-exceptions.filter.spec.ts`),
+sem banco, só mockando `ArgumentsHost`: `HttpException` normal passa
+igual, mensagem em array (tipo class-validator) vira uma string só,
+`PrismaClientKnownRequestError` vira 409, e qualquer outro erro vira 500
+genérico sem detalhe interno. `tsc --noEmit` rodou limpo depois dessa
+mudança, mas não consegui rodar o `npm test` de novo pra confirmar esses
+4 casos — mesma limitação de sempre do meu lado (binário nativo do
+vitest não roda no meu ambiente). Deveria passar, são mocks simples sem
+dependência de banco, mas fica pra você confirmar rodando local.
+
 
 Também não tratei o `PROMOSAUDE_MAIN` (o site órfão do GAM) de nenhuma
 forma além de deixá-lo de fora do relatório por consequência da query.
