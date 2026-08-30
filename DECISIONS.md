@@ -16,7 +16,7 @@ Não criei um módulo separado para `SiteMapping` porque ele funciona basicament
 
 Encontrei uma duplicata para `fb-site-nutrihealth-camp-1` em `2026-07-11`. As duas linhas tinham os mesmos valores e fariam o `spend` daquele dia ser somado duas vezes no relatório.
 
-Minha primeira tentativa foi só apagar a duplicata dentro da própria migration, com um `DELETE` antes de criar a constraint. Rodando o setup completo, isso não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro do zero toda vez que roda, então a duplicata voltava e quebrava a constraint que a migration acabara de criar. A correção de verdade precisava estar no `seed.sql`, não só no banco — removi a duplicata do seed  e mantive o `DELETE` na migration só como rede de segurança, pra quem já tiver esse registro carregado de uma execução anterior.
+Minha primeira tentativa foi só apagar a duplicata dentro da própria migration, com um `DELETE` antes de criar a constraint. Rodando o setup completo, isso não resolveu: `prisma:seed` recarrega o `seed.sql` inteiro do zero toda vez que roda, então a duplicata voltava e quebrava a constraint que a migration acabara de criar. A correção de verdade precisava estar no `seed.sql`, não só no banco — removi a duplicata do seed e mantive o `DELETE` na migration só como rede de segurança, pra quem já tiver esse registro carregado de uma execução anterior.
 
 ### Dia sem `FxRate`
 
